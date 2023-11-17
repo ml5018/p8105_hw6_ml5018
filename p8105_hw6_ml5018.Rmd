@@ -150,3 +150,102 @@ homicide_results |>
 
 It can be concluded that homicides with a male victim are less likely to be solved compared with those with a female victim, since the estimated odds ratio in most cities are less than 1. Most of the confidence intervals for this odds ratio contain the null value 1 even for those with a estimate higher than 1, indicating that only for those cities whose CI does not contain 1, there is a significant difference in the solved rate of homicides with victims of different sex.
 
+# Problem 2
+
+## data import
+
+For this problem, we’ll use the Central Park weather data similar to data we’ve seen elsewhere.
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2022-01-01",
+    date_max = "2022-12-31") |>
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) |>
+  select(name, id, everything())
+```
+
+## bootstrap
+
+The boostrap is helpful when you’d like to perform inference for a parameter / value / summary that doesn’t have an easy-to-write-down distribution in the usual repeated sampling framework. We’ll focus on a simple linear regression with `tmax` as the response with `tmin` and `prcp` as the predictors, and are interested in the distribution of two quantities estimated from these data:
+
+* r̂2
+* log(β̂1∗β̂2)
+
+Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. Plot the distribution of your estimates, and describe these in words. Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r̂2 and log(β̂0∗β̂1). Note: `broom::glance()` is helpful for extracting r̂2 from a fitted regression, and `broom::tidy()` (with some additional wrangling) should help in computing log(β̂1∗β̂2).
+
+## estimates
+
+```{r}
+bootstrap_df =
+  weather_df |>
+  bootstrap(n = 5000) |>
+  mutate(models = map(strap, ~lm(tmax ~ tmin + prcp, data = .x)))
+  
+r_squared_df = 
+  bootstrap_df |>
+  mutate(results = map(models, broom::glance)) |>
+  select(-strap, -models) |>
+  unnest(results)
+
+log_b1b2_df = 
+  bootstrap_df |>
+  mutate(results = map(models, broom::tidy)) |>
+  select(-strap, -models) |>
+  unnest(results) |>
+  select(id = .id, term, estimate) |>
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) |>
+  mutate(log_b1b2 = log(tmin * prcp))
+
+r_squared_df |>
+  summarize(r2_estimate = mean(r.squared))
+log_b1b2_df |>
+  summarize(log_b1b2_estimate = mean(log_b1b2, na.rm = TRUE))
+```
+
+## plots
+
+```{r}
+r_squared_df |>
+  ggplot(aes(x = r.squared)) +
+  geom_density() +
+  labs(
+    title = "Distribution of Estimated R Squared"
+  )
+
+log_b1b2_df |>
+  ggplot(aes(x = log_b1b2)) +
+  geom_density() +
+  labs(
+    title = "Distribution of Estimated log(b1*b2)"
+  )
+```
+
+It can be concluded from the density plots that the distribution of both of the quantities are left-skewed, with log(b1*b2) much more skewed than r squared. Also, NAs are created during the calculation process due to some negative values in logarithms, which may impact the overall distribution of the latter quantity. Baesd on the plots in hand we can tell that the median of the two quantities are approximately 0.92 and -5, respectively.
+
+## quantiles
+
+```{r}
+r_squared_df |>
+  summarize(
+    r2_CI_lower = quantile(r.squared, 0.025),
+    r2_CI_upper = quantile(r.squared, 0.975)
+  ) |>
+  knitr::kable()
+
+log_b1b2_df |>
+  summarize(
+    log_b1b2_CI_lower = quantile(log_b1b2, 0.025, na.rm = TRUE),
+    log_b1b2_CI_upper = quantile(log_b1b2, 0.975, na.rm = TRUE)
+  ) |>
+  knitr::kable()
+```
+
