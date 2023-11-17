@@ -249,3 +249,119 @@ log_b1b2_df |>
   knitr::kable()
 ```
 
+# Problem 3
+
+## data import and cleaning
+
+In this problem, you will analyze data gathered to understand the effects of several variables on a child’s birthweight.
+
+Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
+
+```{r}
+bwt_df = 
+  read_csv("data/birthweight.csv") |>
+  janitor::clean_names() |>
+  mutate(
+    babysex = as.factor(babysex),
+    frace = as.factor(frace),
+    malform = as.factor(malform),
+    mrace = as.factor(mrace)
+  )
+
+sum(is.na(bwt_df))
+```
+
+## regression model
+
+Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use `add_predictions` and `add_residuals` in making this plot.
+
+```{r}
+full_model = 
+  bwt_df |>
+  lm(bwt ~ ., data =_)
+full_model |>
+  broom::tidy() |>
+  knitr::kable()
+
+stepwise_model = 
+  full_model |>
+  MASS::stepAIC(object = _, trace = FALSE, direction = "backward")
+stepwise_model |>
+  broom::tidy() |>
+  knitr::kable()
+
+bwt_df |>
+  add_predictions(stepwise_model) |>
+  add_residuals(stepwise_model) |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point() +
+  labs(
+    x = "fitted values(predictions)",
+    y = "residuals",
+    title = "Residuals versus Fitted Values"
+  )
+```
+
+Using `stepwiseAIC` function to perform stepwise model selection based on a full model, we can conclude from the results that variables to be included in the model are: `babysex`, `bhead`, `blength`, `delwt`, `fincome`, `gaweeks`, `mheight`, `mrace`, `parity`, `ppwt`, `smoken`.
+
+## model comparison
+
+Compare your model to two others:
+
+* One using length at birth and gestational age as predictors (main effects only)
+* One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+
+Make this comparison in terms of the cross-validated prediction error; use `crossv_mc` and functions in `purrr` as appropriate.
+
+```{r}
+#model_1 = lm(bwt ~ blength + gaweeks, data = bwt_df)
+#model_2 = lm(bwt ~ bhead * blength * babysex, data = bwt_df)
+
+cv_df = 
+  crossv_mc(bwt_df, 100) |>
+  mutate(
+    train = map(train, as.tibble),
+    test = map(test, as.tibble)
+  )
+
+comparison_df = 
+  cv_df |>
+  mutate(
+    model_0 = map(train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken, data = bwt_df)),
+    model_1 = map(train, ~lm(bwt ~ blength + gaweeks, data = bwt_df)),
+    model_2 = map(train, ~lm(bwt ~ bhead * blength * babysex, data = bwt_df))
+  ) |>
+  mutate(
+    rmse_0 = map2_dbl(model_0, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_1 = map2_dbl(model_1, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_2 = map2_dbl(model_2, test, \(mod, df) rmse(model = mod, data = df))
+  )
+
+comparison_df |>
+  summarize(
+    mean_rmse_0 = mean(rmse_0),
+    mean_rmse_1 = mean(rmse_1),
+    mean_rmse_2 = mean(rmse_2)
+  ) |>
+  knitr::kable()
+
+comparison_df |>
+  select(starts_with("rmse")) |>
+  mutate(
+    model_0 = rmse_0,
+    model_1 = rmse_1,
+    model_2 = rmse_2
+  ) |>
+  pivot_longer(
+    model_0:model_2,
+    names_to = "model",
+    values_to = "rmse"
+  ) |>
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin(aes(fill = model)) +
+  labs(
+    title = "rmse of 3 Different Models"
+  )
+```
+
+It can be seen from the table and plot that the model we construct using `stepwiseAIC` has the smallest rmse among the three candidate models, suggesting that it is the most reasonable one to fit under such circumstance.
