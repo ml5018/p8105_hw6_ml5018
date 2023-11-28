@@ -211,6 +211,8 @@ log_b1b2_df |>
   summarize(log_b1b2_estimate = mean(log_b1b2, na.rm = TRUE))
 ```
 
+For log(β̂1∗β2), there are `r sum(is.na(log_b1b2_df))` NAs produced during calculation due to the negative value of the base number, and the statistics of the parameter is computed based on the remaining non-NA values.
+
 ## plots
 
 ```{r}
